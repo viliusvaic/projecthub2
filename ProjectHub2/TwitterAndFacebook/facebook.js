@@ -1,5 +1,5 @@
 var request = require('request');
-
+console.log('test');
 var appId = null;
 var appSecret = null;
 var postsData = null;
