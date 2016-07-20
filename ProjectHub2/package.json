@@ -1,0 +1,16 @@
+{
+  "name": "projecthub",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "hapi": "^13.5.0",
+    "mongodb": "^2.2.4",
+    "request": "^2.73.0"
+  }
+}
