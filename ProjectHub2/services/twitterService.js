@@ -1,36 +1,31 @@
 var request = require('request');
 
-var mongodb = require('mongodb');
-var MongoClient = mongodb.MongoClient;
-var url = 'mongodb://localhost:27017/projecthub';
-var collectionName = 'mergedDb';
+var maxItems = 10;
 
 var myOptions = {
-    'encrypted_secret' : '',
-    'bearer_token' : '',
+    'encryptedSecret' : '',
+    'bearerToken' : 'AAAAAAAAAAAAAAAAAAAAAOZawAAAAAAAjZeKa0epD3VkLQls%2Fhx98vuz8Ic%3DxA5sIxcigNRm2hkXMQ5mNnCsJpaeKLp5dyPuBXtF9D4RnLcQDL',
     'user' : 'Greta7411',
-    'consumer_key' : 'fY76y640YGjAr1fPonV769GWJ',
-    'consumer_secret' : 'ZNj0vnbrRF6Y5Mx00SZpYwBVebMWNPmIjKSXrucG5SYFtXVZtJ',
-    'hashtag' : 'test',
-    'db_collection_name' : 'twitterFeed' 
+    'consumerKey' : 'fY76y640YGjAr1fPonV769GWJ',
+    'consumerSecret' : 'ZNj0vnbrRF6Y5Mx00SZpYwBVebMWNPmIjKSXrucG5SYFtXVZtJ',
+    'hashtag' : 'test'
 }
 
 function getBearerToken(options, callback) {
-    options['encrypted_secret'] = new Buffer(options['consumer_key'] + ':' + options['consumer_secret']).toString('base64');
+    options['encryptedSecret'] = new Buffer(options.consumerKey + ':' + options.consumerSecret).toString('base64');
     var oauthOptions = {
         url: 'https://api.twitter.com/oauth2/token',
-        headers: {'Authorization': 'Basic ' + options['encrypted_secret'], 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'},
+        headers: {'Authorization': 'Basic ' + options['encryptedSecret'], 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'},
         body: 'grant_type=client_credentials' 
     };
-    request.post(oauthOptions, function(e, r, body) {  // body is not a JSON
-    options['bearer_token'] = body.substr(39, 114);
-    callback(options);
-    return;
+    request.post(oauthOptions, function(e, r, body) {
+        options.bearerToken = body.substr(39, 114);
+        callback(options);
+        return;
     }); 
 }
 
 function makeApiCall(oauthOptions, callback) {
-    console.log(oauthOptions);
     request.get(oauthOptions, function(e, r, body) {
         try {
             var data = JSON.parse(body);
@@ -42,100 +37,91 @@ function makeApiCall(oauthOptions, callback) {
      });   
 }
 
-// ~~~~~~~~~~~~~~~~~ tweets ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// ~~~~~~~~~~~~~~~~~ media ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-function printOptionsDataAndGetTweets(options) {
-    console.log(options)
-    // getTwitterTweets(options, printTwitterTweets);
-    getTwitterTweets(options, setTwitterTweetsToDb);
-}
-
-function getTwitterTweets(options, callback) {
+function getTwitterTweets(options) {
     var oauthOptions = {
-     url: 'https://api.twitter.com//1.1/statuses/user_timeline.json?count=100&screen_name=' + options['user'],
-     headers: {'Authorization': 'Bearer ' + options['bearer_token']} };
-     makeApiCall(oauthOptions, callback);
+        headers: {'Authorization': 'Bearer ' + options.bearerToken} };
+    if (options.hasOwnProperty('maxId'))
+        oauthOptions.url =  'https://api.twitter.com//1.1/statuses/user_timeline.json?count=' + maxItems + '&max_id=' + options.maxId + '&screen_name=' + options.user;
+    else 
+        oauthOptions.url = 'https://api.twitter.com//1.1/statuses/user_timeline.json?count=' + maxItems + '&screen_name=' + options.user;
+    makeApiCall(oauthOptions, getArrayOfMediaTweets);
 }
 
-function printTwitterTweets(data) {
-     console.log('\n\n\n');
-    for (var i = 0; i < data.length; i++) {
-        if (data[i].hasOwnProperty('extended_entities')) {
-            console.log('-------------------------------------');
-            console.log('id:', data[i]['id']); 
-            console.log('date:', data[i]['created_at']);
-            console.log('screen_name:', data[i]['user']['screen_name']);
-            console.log('text:', data[i]['text']);
-            console.log('url:', data[i]['extended_entities']['media'][0]['media_url']);
-            console.log('favorite:', data[i]['favorite_count']);
-            console.log('retweet:', data[i]['retweet_count']);
-            console.log('type: ', data[i]['extended_entities']['media'][0]['type']);
-            if (data[i]['extended_entities']['media'][0]['type'] == 'video')
-            {
-                console.log('video_url:', data[i]['extended_entities']['media'][0]['video_info']['variants'][0]['url']);
-            }  
-            else if (data[i]['extended_entities']['media'][0]['type'] == 'animated_gif') {
-                console.log('animated_gif_url:', data[i]['extended_entities']['media'][0]['video_info']['variants'][0]['url'])
+function makeMediaObject(data) {
+    var object = {};
+    var dateOptions = { year: 'numeric', month: '2-digit', day: '2-digit', 
+                        hour: '2-digit', minute: '2-digit', second: '2-digit' };
+    object._id = 'tw' + data.id;
+    var date = new Date(data.created_at);
+    object.date = date.toLocaleString('ko-KR', dateOptions);
+    object.from = data.user.screen_name;
+    object.text = data.text;
+    object.imgUrl = data.extended_entities.media[0].media_url;
+    object.favouriteCount = data.favorite_count;
+    object.retweetCount = data.retweet_count; 
+    object.type = data.extended_entities.media[0].type;
+    if (data.extended_entities.media[0].type == 'video') {
+       object.videoUrl =  data.extended_entities.media[0].video_info.variants[0].url;
+    }  
+    else if (data.extended_entities.media[0].type == 'animated_gif') {
+        object.animatedGifUrl =  data.extended_entities.media[0].video_info.variants[0].url;
+        }
+    return object;
+} 
+
+function getArrayOfMediaTweets(data) {
+    var array = [];
+    var object = {};
+    data.forEach(function(item) {
+        if (item.hasOwnProperty('extended_entities')) {
+            object = makeMediaObject(item);
+            array.push(object);
             }
-        }    
-    }
+    });
+    return array;
 }
 
-function setTwitterTweetsToDb(data) {
-    MongoClient.connect(url, function (err, db) {
-        var collection = db.collection(collectionName);
-        var object = {};
-        for (var i = 0; i < data.length; i++) {
-            if (data[i].hasOwnProperty('extended_entities')) {;
-                object['_id'] = 'tw' + data[i]['id'];
-                var date = new Date(data[i]['created_at']);
-                object['date'] = date;
-                object['screen_name'] = data[i]['user']['screen_name'];
-                object['text'] = data[i]['text'];
-                object['url'] = data[i]['extended_entities']['media'][0]['media_url'];
-                object['favourite'] = data[i]['favorite_count'];
-                object['retweet'] = data[i]['retweet_count']; 
-                object['type'] = data[i]['extended_entities']['media'][0]['type']
-                if (data[i]['extended_entities']['media'][0]['type'] == 'video') {
-                    object['video_url'] =  data[i]['extended_entities']['media'][0]['video_info']['variants'][0]['url'];
-                }  
-                else if (data[i]['extended_entities']['media'][0]['type'] == 'animated_gif') {
-                    object['animated_gif_url'] =  data[i]['extended_entities']['media'][0]['video_info']['variants'][0]['url'];
-                }
-                collection.save(object);
-            } 
-        }  
-        db.close();    
-    })   
-}
-
-getBearerToken(myOptions, printOptionsDataAndGetTweets);
+// getTwitterTweets(myOptions);
 
 // ~~~~~~~~~~~~~~~~~ hashtags ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-function printOptionsDataAndGetHashtags(options) {
-    console.log(options)
-    var hashtagsData;
-    getTwitterHashtags(options, hashtagsData, printTwitterHashtags);
-}
-
-function getTwitterHashtags(options, data, callback) {
+function getTwitterHashtags(options) {
     var oauthOptions = {
-        url: 'https://api.twitter.com/1.1/search/tweets.json?q=%23' + options['hashtag'] + '%20from%3A' + options['user'],
-        headers: {'Authorization': 'Bearer ' + options['bearer_token']} };  
-        makeApiCall(oauthOptions, data, callback);
+        headers: {'Authorization': 'Bearer ' + options.bearerToken} };  
+    if (options.hasOwnProperty('maxId'))
+        oauthOptions.url = 'https://api.twitter.com/1.1/search/tweets.json?q=%23' + options.hashtag + '%20from%3A' + options.user + '&max_id=' + options.maxId;
+    else
+        oauthOptions.url = 'https://api.twitter.com/1.1/search/tweets.json?q=%23' + options.hashtag + '%20from%3A' + options.user; 
+    makeApiCall(oauthOptions, getArrayOfHashtags);
 }
 
-function printTwitterHashtags(data) {
-    console.log('\n\n\n');
-    for (var i = 0; i < data['statuses'].length; i++) {
-        console.log('-------------------------------------');
-        console.log('id:', data['statuses'][i]['id']); 
-        console.log('date:', data['statuses'][i]['created_at']);
-        console.log('text:', data['statuses'][i]['text']);
-        console.log('favorite:', data['statuses'][i]['favorite_count']);
-        console.log('retweet:', data['statuses'][i]['retweet_count']);
-    } 
+function makeHashtagsObject(data) {   
+    var object = {};
+    var dateOptions = { year: 'numeric', month: '2-digit', day: '2-digit', 
+                        hour: '2-digit', minute: '2-digit', second: '2-digit' };
+    object.id = '_tw' + data.id;
+    var date = new Date(data.created_at);
+    object.date = date.toLocaleString('ko-KR', dateOptions);
+    object.text = data.text;
+    object.favoriteCount = data.favorite_count;
+    object.retweetCount = data.retweet_count;
+    object.from = data.user.screen_name;
+    object.type = 'text';
+    object.hashtags = data.entities.hashtags;
+    return object;
 }
 
-// getBearerToken(myOptions, printOptionsDataAndGetHashtags);
+function getArrayOfHashtags(data, callback) {
+    // console.log(data);
+    var array = [];
+    var object = {};
+    data.statuses.forEach(function(item) {
+        object = makeHashtagsObject(item);
+        array.push(object);
+    });  
+    return array;
+}
+
+// getTwitterHashtags(myOptions);

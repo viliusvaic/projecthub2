@@ -1,10 +1,5 @@
 var request = require('request');
 
-var mongodb = require('mongodb');
-var MongoClient = mongodb.MongoClient;
-var url = 'mongodb://localhost:27017/projecthub';
-var collectionName = 'mergedDb';
-
 var myOptions = {
     'appId' : '1749939841956026',
     'appSecret' : 'dfc5fd5baf5cf628928c88a4690e47c7',
@@ -24,90 +19,127 @@ function makeApiCall(oauthOptions, callback, hashtag) {
     });
 }
 
-// ~~~~~~~~~~~~~~~~~~~~~~ posts ~~~~~~~~~~~~~~~~~~~~~~~
+// ~~~~~~~~~~~~~~~~~~~~~~ photos ~~~~~~~~~~~~~~~~~~~~~~~
 
-function getPagePosts(options, callback) {
+function getPhotoPosts(options) {
     var oauthOptions = {
         url: 'https://graph.facebook.com/v2.6/' + options['pageId'] + '?fields=albums{photos{created_time,id,name,likes.limit(1).summary(true),comments.limit(1).summary(true),images, from}}&access_token=' + options['appId'] + '|' + options['appSecret'],
         JSON: true
     };
-    makeApiCall(oauthOptions, callback);  
+    makeApiCall(oauthOptions, makePhotoArray);  
 }
 
-function printPagePosts(data) {
-    console.log('\n\n\n')
-    for (var i = 0; i < data['albums']['data'].length; i++) // albums
-    {
-       console.log('~~~~~~~~~~~~~~~~~~~~~~~~ album: ', i);
-       for (var j = 0; j < data['albums']['data'][i]['photos']['data'].length; j++) { // items in albums
-           console.log('-------------------');
-           console.log('id:', data['albums']['data'][i]['photos']['data'][j]['id']);
-           console.log('created_time:', data['albums']['data'][i]['photos']['data'][j]['created_time']);
-           console.log('from: ', data['albums']['data'][i]['photos']['data'][j]['from']);
-            if (data['albums']['data'][i]['photos']['data'][j].hasOwnProperty('name'))
-                console.log('description:', data['albums']['data'][i]['photos']['data'][j]['name']);
-            else
-                console.log('description: ');
-             
-            console.log('url:', data['albums']['data'][i]['photos']['data'][j]['images'][0]['source']);
-            console.log('likes:', data['albums']['data'][i]['photos']['data'][j]['likes']['summary']['total_count']);
-            console.log('comments:', data['albums']['data'][i]['photos']['data'][j]['comments']['summary']['total_count']);
-        }
-    }
+function makePhotoObject(data){
+    var object = {};
+    var dateOptions = { year: 'numeric', month: '2-digit', day: '2-digit', 
+                        hour: '2-digit', minute: '2-digit', second: '2-digit' };
+    object['_id'] = 'fb' + data.id;
+    date = new Date(data.created_time);
+    object.date = date.toLocaleString('ko-KR', dateOptions);
+    object.from = data.from;
+    if (data.hasOwnProperty('name'))
+        object.text = data.name;
+    object.imgUrl = data.images[0].source;
+    object.likes = data.likes.summary.total_count;
+    object.comments = data.comments.summary.total_count;
+    object.type = 'photo';
+    
+    return object;
 }
 
-function setPagePostsToDb(data) {
-    MongoClient.connect(url, function (err, db) {
-        var collection = db.collection(collectionName);
-        var object = {};
-        for (var i = 0; i < data['albums']['data'].length; i++) // albums
-        {
-        for (var j = 0; j < data['albums']['data'][i]['photos']['data'].length; j++) { // items in albums
-            object['_id'] =  'fb' + data['albums']['data'][i]['photos']['data'][j]['id'];
-            var date = new Date(data['albums']['data'][i]['photos']['data'][j]['created_time']);
-            object['date'] = date;
-            object['from'] = data['albums']['data'][i]['photos']['data'][j]['from'];
-                if (data['albums']['data'][i]['photos']['data'][j].hasOwnProperty('name'))
-                    object['description'] = data['albums']['data'][i]['photos']['data'][j]['name'];
-                else
-                    object['description'] = '';
-                
-                object['url'] = data['albums']['data'][i]['photos']['data'][j]['images'][0]['source'];
-                object['likes'] = data['albums']['data'][i]['photos']['data'][j]['likes']['summary']['total_count'];
-                object['comments'] = data['albums']['data'][i]['photos']['data'][j]['comments']['summary']['total_count'];
-                collection.save(object);
-            }
-        }
-    db.close(); 
-    }); 
+function makePhotoArray(data) {
+    var array = [];
+    var object = {};
+    data.albums.data.forEach(function(album) {
+        console.log('album');
+        album.photos.data.forEach(function(item) {
+            object = makePhotoObject(item);
+            array.push(object);
+            });
+    });
+    console.log(array);
+    return array;
 }
 
-getPagePosts(myOptions, setPagePostsToDb)
+// getPhotoPosts(myOptions, makeMediaArray);
+
+// ~~~~~~~~~~~~~~~~~~~~~~ videos ~~~~~~~~~~~~~~~~~~~~~~~
+
+function getVideoPosts(options) {
+    var oauthOptions = {
+        url: 'https://graph.facebook.com/v2.6/' + options['pageId'] + '?fields=videos{created_time,description,from,id,likes.limit(1).summary(true),comments.limit(1).summary(true),source}&access_token=' + options['appId'] + '|' + options['appSecret'],
+        JSON: true
+    };
+    makeApiCall(oauthOptions, makeVideoArray);  
+}
+
+function makeVideoObject(data){
+    var object = {};
+    var dateOptions = { year: 'numeric', month: '2-digit', day: '2-digit', 
+                        hour: '2-digit', minute: '2-digit', second: '2-digit' };
+    object['_id'] = 'fb' + data.id;
+    date = new Date(data.created_time);
+    object.date = date.toLocaleString('ko-KR', dateOptions);
+    object.from = data.from;
+    object.text = data.description;
+    object.videoUrl = data.source;
+    object.likes = data.likes.summary.total_count;
+    object.comments = data.comments.summary.total_count;
+    object.type = 'video';
+    
+    return object;
+}
+
+function makeVideoArray(data) {
+    var array = [];
+    var object = {};
+    data.videos.data.forEach(function(item) {
+        object = makeVideoObject(item);
+        array.push(object);
+    });
+    console.log(array);
+    return array;
+}
+
+// getVideoPosts(myOptions);
 
 // ~~~~~~~~~~~~~~~~~~~~~~ hashtags ~~~~~~~~~~~~~~~~~~~~~~~
 
-function getHashtagPosts(options, callback) {
+function getHashtagsPosts(options) {
     var oauthOptions = {
         url: 'https://graph.facebook.com/v2.6/' + options['pageId'] + '?fields=feed{id,from,created_time,message,comments.limit(1).summary(true),sharedposts.limit(1).summary(true),likes.limit(1).summary(true)}&access_token='  + options['appId'] + '|' + options['appSecret'],
         JSON: true
     };
-    makeApiCall(oauthOptions, callback, options['hashtag']);   
+    makeApiCall(oauthOptions, makeHashtagsArray, options['hashtag']);   
 }
 
-function printHashtagPosts(data, hashtag) {
-    console.log('\n\n\n');
-    for (var i = 0; i < data['feed']['data'].length; i++) {
-        if (data['feed']['data'][i].hasOwnProperty('message'))
-            if (data['feed']['data'][i]['message'].indexOf(hashtag) > -1) {
-                console.log('-------------------');
-                console.log('id', data['feed']['data'][i]['id']);
-                console.log('created_time', data['feed']['data'][i]['created_time']);
-                console.log('from', data['feed']['data'][i]['from']);
-                console.log('message: ', data['feed']['data'][i]['message']);
-                console.log('likes', data['feed']['data'][i]['likes']['summary']['total_count']);
-                console.log('comments', data['feed']['data'][i]['comments']['summary']['total_count']);
+function makeHashtagObject(data) {
+    var object = {};
+    var dateOptions = { year: 'numeric', month: '2-digit', day: '2-digit', 
+                        hour: '2-digit', minute: '2-digit', second: '2-digit' };
+    object['_id'] = 'fb' + data.id;
+    date = new Date(data.created_time);
+    object.date = date.toLocaleString('ko-KR', dateOptions);
+    object.from = data.from;
+    object.text = data.message;
+    object.likesCount = data.likes.summary.total_count;
+    object.commentsCount = data.comments.summary.total_count;
+    
+    return object;
+}
+
+function makeHashtagsArray(data, hashtag) {
+    var array = [];
+    var object = {};
+    data.feed.data.forEach(function(item) {
+        if (item.hasOwnProperty('message'))
+            if (item.message.indexOf(hashtag) > -1) {
+                object = makeHashtagObject(item);
+                array.push(object);
             }
-    }
+        });
+    console.log(array);
+    return array; 
 }
 
-// getHashtagPosts(myOptions, printHashtagPosts);
+// getHashtagsPosts(myOptions);
